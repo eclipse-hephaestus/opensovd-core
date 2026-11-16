@@ -1,0 +1,146 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Contributors to the Eclipse Foundation
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "Cargo.lock",
+    "Cargo.toml",
+    "rust-toolchain.toml",
+    "cr_checker_exclusion",
+])
+
+package_group(
+    name = "workspace_crates",
+    packages = ["//..."],
+)
+
+alias(
+    name = "opensovd-gateway",
+    actual = "//opensovd-cli/gateway:opensovd_gateway",
+)
+#########################################
+# Score process rules
+#########################################
+load("@score_tooling//:defs.bzl", "copyright_checker", "dash_license_checker", "setup_starpls")
+load("@score_tooling//third_party/format:macros.bzl", "use_format_targets")
+load("@score_sbom//:defs.bzl", "sbom")
+
+setup_starpls(
+    name = "starpls_server",
+    visibility = ["//visibility:public"],
+)
+
+copyright_checker(
+    name = "copyright",
+    srcs = [],  # Check all tracked files with a supported extension.
+    config = "@score_tooling//cr_checker/resources:config",
+    exclusion = "//:cr_checker_exclusion",
+    extensions = [
+        "bazel",
+        "BUILD",
+        "bzl",
+        "c",
+        "cpp",
+        "h",
+        "hpp",
+        "ini",
+        "py",
+        "rs",
+        "rst",
+        "sh",
+        "yaml",
+        "yml",
+    ],
+    template = "//:copyright_templates.ini",
+    visibility = ["//visibility:public"],
+)
+
+# Rust dependencies are read directly from Cargo.lock.
+filegroup(
+    name = "cargo_lock",
+    srcs = [
+        "Cargo.lock",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+dash_license_checker(
+    src = "//:cargo_lock",
+    file_type = "cargo",
+    visibility = ["//visibility:public"],
+)
+
+# Export with `uv export --locked --offline --format requirements.txt
+# --all-groups --all-extras --no-header --no-annotate --no-editable
+# --no-emit-project --quiet --output-file python-requirements.txt`.
+filegroup(
+    name = "python_requirements",
+    srcs = ["python-requirements.txt"],
+    visibility = ["//visibility:public"],
+)
+
+# Add target for formatting checks
+use_format_targets(languages = [
+    "python",
+    "rust",
+    "starlark",
+    "yaml",
+    "cpp",
+])
+
+
+########################################
+# Score SBOM generation rules
+########################################
+sbom(
+    name = "sbom",
+    auto_cdxgen = False,
+    auto_crates_cache = True,
+    component_name = "opensovd_core",
+    component_version = "0.1.1",
+    generation_context = "build",
+    module_lockfiles = [":MODULE.bazel.lock"],
+    output_formats = [
+        "spdx",
+    ],
+    targets = [
+        # Product binary; pulls in libcli, opensovd-core, -extra, -mocks,
+        # -models and -server transitively.
+        "//opensovd-cli/gateway:opensovd_gateway",
+        # Not reachable from the gateway binary, but shipped as part of the
+        # project, so listed explicitly.
+        "//opensovd-providers:opensovd_providers",
+    ],
+)
+
+# Product SBOM alias with an explicit lifecycle-oriented name.
+alias(
+    name = "product_sbom",
+    actual = ":sbom",
+    visibility = ["//visibility:public"],
+)
+
+# Qualification inventory for the build and test tooling. This is kept separate
+# from the product SBOM because build-time dependencies are not product/runtime
+# dependencies.
+sbom(
+    name = "build_tools_sbom",
+    testonly = True,
+    auto_cdxgen = False,
+    # The tooling below pulls in no crates from //:Cargo.lock, so there is
+    # nothing for the crates.io metadata cache to resolve.
+    auto_crates_cache = False,
+    component_name = "opensovd_core_build_tools",
+    component_version = "0.1.1",
+    generation_context = "build",
+    # Eclipse Dash license tool, used by both dependency checks.
+    java_files = ["@score_tooling//dash:jar"],
+    output_formats = ["spdx"],
+    targets = [
+        "//:copyright.check",
+        "//:license.check.license_check",
+        "//license/python:license.check.license_check",
+        "//:starpls_server",
+    ],
+)

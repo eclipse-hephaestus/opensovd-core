@@ -42,7 +42,7 @@ const VENDOR_INFO: OpenSovdInfo = OpenSovdInfo {
 async fn main() -> ExitCode {
     let cli = cli::Cli::parse();
 
-    if let Err(e) = libcli::init_tracing("gw=info,srv=info,tower_http=debug,axum=trace", None) {
+    if let Err(e) = libcli::init_tracing("warn,gw=info,srv=info,tower_http=debug", None) {
         eprintln!("Failed to initialize tracing: {e}");
         return ExitCode::FAILURE;
     }
@@ -132,16 +132,20 @@ where
         .authenticator(authenticator)
         .authorizer(authorizer);
 
+    #[cfg(feature = "tls")]
+    if let Some(tls) = cli.tls.config() {
+        anyhow::ensure!(
+            uri.scheme_str() == Some("https"),
+            "--tls-cert requires an https:// --url"
+        );
+        let mtls = tls.is_mtls();
+        let config = tls.build().context("failed to configure TLS")?;
+        tracing::info!(target: TARGET, mtls, "TLS enabled");
+        builder = builder.tls(config);
+    }
+
     builder = configure_listener(builder, &cli, authority).await?;
     builder = configure_topology(builder, &cli).await;
-
-    #[cfg(feature = "tls")]
-    {
-        if let Some(tls_config) = cli.tls.build()? {
-            tracing::info!(target: TARGET, "TLS enabled");
-            builder = builder.tls(tls_config);
-        }
-    }
 
     let cors = cors::create_cors_layer(
         &cli.cors.origins,
@@ -170,7 +174,7 @@ where
     }
 
     let server = builder
-        .layer(libcli::trace::trace_layer())
+        .layer(opensovd_extra::trace::server_layer())
         .layer(tower::util::option_layer(cors))
         .base_uri(uri)?
         .vendor_info(VENDOR_INFO)
@@ -257,7 +261,10 @@ async fn configure_topology<Vendor, Authn, Authz, Layer>(
     };
 
     #[cfg(not(feature = "mock"))]
-    let topology = Topology::default();
+    let topology = {
+        let _ = cli;
+        Topology::default()
+    };
 
     builder.topology(topology)
 }

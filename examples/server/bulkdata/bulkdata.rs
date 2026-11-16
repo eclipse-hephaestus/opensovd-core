@@ -319,7 +319,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider = TempFsBulkDataProvider { root };
 
     let component = Component::new(COMPONENT_ID, "Bulkdata Host");
-    let app = App::new(APP_ID, "Filesystem Bulkdata Example", COMPONENT_ID)
+    let app = App::new(APP_ID, "Filesystem Bulkdata Example")
+        .with_component_id(COMPONENT_ID)
         .with_bulkdata_provider(provider);
 
     let topology = Topology::new();
@@ -334,7 +335,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base_uri("http://127.0.0.1:7690/sovd")?
         .listener(listener)
         .topology(topology)
-        .layer(libcli::trace::trace_layer())
+        .layer(opensovd_extra::trace::server_layer())
         .build()?;
 
     tracing::info!(
