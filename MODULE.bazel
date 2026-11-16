@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Contributors to the Eclipse Foundation
+# SPDX-License-Identifier: Apache-2.0
+
 module(
     name = "opensovd_core",
     version = "0.0.0",
@@ -34,3 +37,16 @@ opensovd_crate_universe.from_cargo(
     skip_cargo_lockfile_overwrite = True,
 )
 use_repo(opensovd_crate_universe, "crate_index")
+
+# S-CORE process rules
+
+bazel_dep(name = "score_tooling", version = "2.2.1")
+bazel_dep(name = "rules_python", version = "1.8.5")
+
+# S-CORE SBOM rules
+
+bazel_dep(name = "score_sbom", version = "0.1.1")
+
+sbom_ext = use_extension("@score_sbom//:extensions.bzl", "sbom_metadata")
+sbom_ext.track_module(name = "score_tooling")
+use_repo(sbom_ext, "sbom_metadata")
